@@ -3,5 +3,25 @@ on: [push]
 jobs:
   Deploy:
     runs-on: ubuntu-latest
+    container: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     steps:
-      - run: echo it lives
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        
+      - name: Configure gcloud
+        env:
+          GCP_SERVICE_ACCOUNT_ID: github-ci@kube-sandbox-319402.iam.gserviceaccount.com
+          GCP_KEY: ${{ secrets.GCP_KEY }}
+          GCP_REGION: europe-west1
+          GCP_ZONE: europe-west1-b
+          GCP_PROJECT: kube-sandbox-319402
+        run: |
+          echo $GCP_KEY | base64 -di > /tmp/gcp_key.json;
+          gcloud auth activate-service-account $GCP_SERVICE_ACCOUNT_ID --key-file=/tmp/gcp_key.json &&
+          gcloud config set project $GCP_PROJECT
+          gcloud config set compute/region $GCP_REGION
+          gcloud config set compute/zone $GCP_ZONE
+          gcloud container clusters get-credentials primary-cluster &&
+          kubectl cluster-info
