@@ -3,5 +3,7 @@ on: [push]
 jobs:
   Deploy:
     runs-on: ubuntu-latest
+    container: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
     steps:
       - run: echo it lives
+
