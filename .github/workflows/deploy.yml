@@ -17,6 +17,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Set build & deployment parameters
+        run: |
+          echo "GIT_TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          echo "DOCKER_TAG=$REGISTRY_HOSTNAME/$GCP_PROJECT/$IMAGE:${GITHUB_REF##*/}-${GITHUB_RUN_ID}" >> $GITHUB_ENV
+
+      - name: Environment config
+        run: |
+          if echo ${{ env.GIT_TAG }} | grep '^[0-9]+.[0-9]+.[0-9]+$'; then
+            echo 'This is a production release tag'
+            echo 'ENV=dev' >> $GITHUB_ENV
+            echo "KUBE_NAMESPACE=default" >> $GITHUB_ENV
+          elif echo ${{ env.GIT_TAG }} | grep '^[0-9]+.[0-9]+.[0-9]+-rc[0-9]+$'; then
+            echo 'This is a staging release candidate tag'
+            echo 'ENV=staging' >> $GITHUB_ENV
+            echo "KUBE_NAMESPACE=staging" >> $GITHUB_ENV
+          elif [ "$GIT_TAG" = 'main' ]; then
+            echo 'This is a dev deployment'
+            echo 'ENV=dev' >> $GITHUB_ENV
+            echo "KUBE_NAMESPACE=dev" >> $GITHUB_ENV
+          else
+            echo 'This is a feature branch'
+            echo 'ENV=namespace' >> $GITHUB_ENV
+            echo "KUBE_NAMESPACE=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          fi
+
       - name: Install tooling
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -35,11 +60,6 @@ jobs:
           gcloud container clusters get-credentials primary-cluster
           gcloud auth configure-docker $REGISTRY_HOSTNAME --quiet
 
-      - name: Set build & deployment parameters
-        run: |
-          echo "KUBE_NAMESPACE=${GITHUB_REF##*/}" >> $GITHUB_ENV
-          echo "DOCKER_TAG=$REGISTRY_HOSTNAME/$GCP_PROJECT/$IMAGE:${GITHUB_REF##*/}-${GITHUB_RUN_ID}" >> $GITHUB_ENV
-
       - name: Docker image build
         run: docker build -t $DOCKER_TAG .
 
@@ -47,6 +67,7 @@ jobs:
         run: docker push $DOCKER_TAG
 
       - name: Create kube namespace
+        if: ${{ env.ENV == 'namespace' }}
         run: |
           if ! kubectl get namespace ${{ env.KUBE_NAMESPACE }}; then
             kubectl create namespace ${{ env.KUBE_NAMESPACE }}
