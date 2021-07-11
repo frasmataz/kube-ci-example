@@ -64,7 +64,7 @@ jobs:
           gcloud auth configure-docker $REGISTRY_HOSTNAME --quiet
 
       - name: Docker image build
-        run: docker build -t $DOCKER_TAG .
+        run: docker build -t $DOCKER_TAG nginx
 
       - name: Push image to GCR
         run: docker push $DOCKER_TAG
