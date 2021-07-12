@@ -1,26 +1,47 @@
 name: Base build and deploy
 on:   [push]
-jobs:
-  build-and-deploy:
-    runs-on:    ubuntu-latest
-    container:  gcr.io/google.com/cloudsdktool/cloud-sdk:latest
-    env:
-      IMAGE:              nginx-packed
-      REGISTRY_HOSTNAME:  gcr.io
-      GCP_ACCOUNT_ID:     ${{ secrets.GCP_ACCOUNT_ID }}
-      GCP_KEY:            ${{ secrets.GCP_KEY }}
-      GCP_PROJECT:        ${{ secrets.GCP_PROJECT }}
-      GCP_REGION:         europe-west1
-      GCP_ZONE:           europe-west1-b
-    steps:
 
+env:
+  REGISTRY_HOSTNAME:  gcr.io
+  GCP_ACCOUNT_ID:     ${{ secrets.GCP_ACCOUNT_ID }}
+  GCP_KEY:            ${{ secrets.GCP_KEY }}
+  GCP_PROJECT:        ${{ secrets.GCP_PROJECT }}
+  GCP_REGION:         europe-west1
+  GCP_ZONE:           europe-west1-b
+
+jobs:
+  test:
+    runs-on:  ubuntu-latest
+
+    env:
+      IMAGE_NAME: test-runner
+
+    steps:
       - name: Checkout
         uses: actions/checkout@v2
 
-      - name: Set build & deployment parameters
+      - name: Docker image build
+        run:  docker build -t ${{ env.IMAGE_NAME }} test
+
+      - name: Run tests
+        run:  docker run ${{ env.IMAGE_NAME }}
+
+  deploy:
+    runs-on:    ubuntu-latest
+    container:  gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    needs:      test
+
+    env:
+      IMAGE_NAME: nginx-packed
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Set deployment parameters
         run: |
           echo "GIT_TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
-          echo "DOCKER_TAG=$REGISTRY_HOSTNAME/$GCP_PROJECT/$IMAGE:${GITHUB_REF##*/}-${GITHUB_RUN_ID}" >> $GITHUB_ENV
+          echo "DOCKER_TAG=$REGISTRY_HOSTNAME/$GCP_PROJECT/$IMAGE_NAME:${GITHUB_REF##*/}-${GITHUB_RUN_ID}" >> $GITHUB_ENV
 
       - name: Environment config
         run: |
@@ -64,10 +85,10 @@ jobs:
           gcloud auth configure-docker $REGISTRY_HOSTNAME --quiet
 
       - name: Docker image build
-        run: docker build -t $DOCKER_TAG .
+        run: docker build -t ${{ env.DOCKER_TAG }} nginx
 
       - name: Push image to GCR
-        run: docker push $DOCKER_TAG
+        run: docker push ${{ env.DOCKER_TAG }}
 
       - name: Create kube namespace
         if: ${{ env.ENV == 'namespace' }}
@@ -82,7 +103,7 @@ jobs:
           cat > values.yml <<EOF
           #@data/values
           ---
-          image: $DOCKER_TAG
+          image: ${{ env.DOCKER_TAG }}
           EOF
 
           ./ytt -f nginx-pod.yml -f values.yml | kubectl -n ${{ env.KUBE_NAMESPACE }} apply -f -

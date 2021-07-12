@@ -1,0 +1,1 @@
+/usr/games/cowsay 'hmm yes this looks fine'
